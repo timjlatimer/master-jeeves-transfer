@@ -1,0 +1,22 @@
+KEI API Keys (from Tim, March 4, 2026)
+========================================
+
+Master Jeeves HB1000: 1543633c1a6b426c5d6d22337c5c638b
+HB1000: 5a97d41b1ada0f497c7424b4b9623713
+Default: 2da63347dd2214cd15ba281c2f96a061
+
+KEI API Documentation: https://kie.ai/market
+KEI Pricing: https://kie.ai/pricing (30-50% cheaper than official APIs, up to 80% discount)
+KEI Logs: https://kie.ai/logs
+
+Required Headers:
+  Authorization: Bearer <API_KEY>
+  Content-Type: application/json
+
+All tasks are ASYNCHRONOUS - 200 OK means task created, not completed.
+Must poll task_id or use webhook for results.
+
+Rate limits: 20 requests per 10 seconds, 100+ concurrent tasks.
+Data retention: media 14 days, logs 2 months.
+
+Account: Tim J Latimer / timjlatimer@gmail.com

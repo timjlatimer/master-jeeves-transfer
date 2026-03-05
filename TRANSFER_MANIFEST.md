@@ -180,3 +180,29 @@ If all files pass, you will see `OK` for each file. Any `FAILED` indicates corru
 *Generated March 5, 2026 by Manus AI*
 *For the SIC HB1000 Solve Team*
 *The record is the record.*
+
+---
+
+## visuals/ — Visual Asset Library Update
+*Appended March 5, 2026 — Bingo City Design Sprint Assets*
+
+The `visuals/` directory has been fully populated. The `VISUAL_ASSETS_NOTE.md` placeholder has been replaced with a proper `README.md`. Six visual asset files have been added.
+
+| File | SHA256 (full) |
+|:-----|:--------------|
+| `bingo_city_infographic.png` | `03a97d3ee7d96a8194521a83cf0b5d31376fed8dce2792714695f02ee94008ce` |
+| `bingo_rooftop_visual.png` | `6c13efe82393d1536c9d05b58e686b70055b9ca3e7cbb8219500a0a04d217384` |
+| `bingo_rooftop_annotated.png` | `3b266c1626b03711f919e7c8fba74b2d5e940e7ca83f91dabaf31ceb1527cc79` |
+| `bingo_rooftop_annotated_v2.png` | `4f77ef30f842d3fd12fed868e5550797e7436efaaa630cefcab6bcda141a58af` |
+| `bingo_rooftop_pixar.png` | `3f96e1ce502f4a1fe22262a7f1c18624f36ba790316fdd8c3b479d10a8183b92` |
+| `v13_learning_loop_report.pdf` | `0d408cc0a1a3a0331d693ea6afd7d435bc111baf72f43aefbe1ce7815182d370` |
+| `README.md` (visuals/) | *(generated in-place — see repo)* |
+
+**Total visual assets added:** 6 files
+**Total size of visuals/ directory:** ~24 MB
+**Placeholder removed:** `VISUAL_ASSETS_NOTE.md` → replaced by `visuals/README.md`
+
+---
+*Appended March 5, 2026 by Manus AI*
+*For the SIC HB1000 Solve Team*
+*The record is the record.*

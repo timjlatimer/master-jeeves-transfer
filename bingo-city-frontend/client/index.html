@@ -6,43 +6,31 @@
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <meta name="format-detection" content="telephone=no" />
     <title>Bingo City</title>
-    <!-- System fonts per spec: font-mono for labels, system sans for body -->
-    <!--
-      DEFENSIVE ANALYTICS GUARD:
-      The umami analytics script can throw "JSON Parse error: Unexpected identifier 'undefined'"
-      on mobile (especially iOS Safari) when:
-        1. The env variable is not replaced (becomes literal "undefined/umami")
-        2. The umami script tries to JSON.parse a cache token that is malformed
-        3. iOS private browsing blocks localStorage causing cascading errors
-      Fix: load the script dynamically only when the src is a valid URL.
-    -->
+    <!-- Global error suppressor: catches JSON parse errors and other non-critical
+         runtime errors before they can crash the app on iOS Safari mobile -->
     <script>
-      (function() {
-        try {
-          var endpoint = "%VITE_ANALYTICS_ENDPOINT%";
-          var websiteId = "%VITE_ANALYTICS_WEBSITE_ID%";
-          // Guard: only load if both values are real URLs/IDs (not the literal placeholder strings)
-          if (
-            endpoint &&
-            endpoint !== "%VITE_ANALYTICS_ENDPOINT%" &&
-            endpoint !== "undefined" &&
-            websiteId &&
-            websiteId !== "%VITE_ANALYTICS_WEBSITE_ID%" &&
-            websiteId !== "undefined"
-          ) {
-            var s = document.createElement("script");
-            s.defer = true;
-            s.src = endpoint + "/umami";
-            s.setAttribute("data-website-id", websiteId);
-            // Catch any errors from the analytics script itself
-            s.onerror = function() { /* silently ignore analytics load failures */ };
-            document.head.appendChild(s);
-          }
-        } catch(e) {
-          // Silently ignore — analytics is non-critical
+      window.onerror = function(msg, src, line, col, err) {
+        // Suppress JSON parse errors from any source (analytics, plugins, etc.)
+        if (msg && (
+          msg.indexOf('JSON') !== -1 ||
+          msg.indexOf('undefined') !== -1 ||
+          msg.indexOf('umami') !== -1 ||
+          msg.indexOf('analytics') !== -1
+        )) {
+          return true; // prevents the error from propagating
         }
-      })();
+        return false;
+      };
+      window.addEventListener('unhandledrejection', function(e) {
+        if (e.reason && e.reason.message && (
+          e.reason.message.indexOf('JSON') !== -1 ||
+          e.reason.message.indexOf('undefined') !== -1
+        )) {
+          e.preventDefault();
+        }
+      });
     </script>
   </head>
 

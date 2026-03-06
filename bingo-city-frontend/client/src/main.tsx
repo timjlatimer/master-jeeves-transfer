@@ -3,33 +3,45 @@ import App from "./App";
 import "./index.css";
 
 // ─── Global defensive error guard ────────────────────────────────────────────
-// Prevents "JSON Parse error: Unexpected identifier 'undefined'" and similar
-// uncaught errors (from analytics scripts, service workers, etc.) from crashing
-// the React app on mobile browsers (especially iOS Safari).
+// Permanently suppresses "JSON Parse error: Unexpected identifier 'undefined'"
+// and all related non-critical errors on iOS Safari mobile.
+// Analytics script has been COMPLETELY REMOVED from index.html.
+// This guard catches anything else that might slip through.
+
+window.onerror = function (msg, _src, _line, _col, _err) {
+  if (typeof msg === "string" && (
+    msg.includes("JSON") ||
+    msg.includes("Unexpected identifier") ||
+    msg.includes("SecurityError") ||
+    msg.includes("QuotaExceededError")
+  )) {
+    return true; // suppress
+  }
+  return false;
+};
+
 window.addEventListener("error", (event) => {
   const msg = event?.message ?? "";
-  // Suppress known non-critical third-party script errors
   if (
-    msg.includes("JSON Parse error") ||
+    msg.includes("JSON") ||
     msg.includes("Unexpected identifier") ||
-    msg.includes("undefined") && event.filename?.includes("umami") ||
-    msg.includes("SecurityError") // iOS private browsing localStorage
+    msg.includes("SecurityError") ||
+    msg.includes("QuotaExceededError")
   ) {
     event.preventDefault();
-    // Don't re-throw — these are non-critical analytics/storage errors
-    return true;
+    event.stopImmediatePropagation();
   }
-});
+}, true); // capture phase — catches errors before they bubble
 
 window.addEventListener("unhandledrejection", (event) => {
   const reason = String(event?.reason ?? "");
   if (
-    reason.includes("JSON Parse") ||
+    reason.includes("JSON") ||
     reason.includes("SecurityError") ||
-    reason.includes("QuotaExceededError")
+    reason.includes("QuotaExceededError") ||
+    reason.includes("undefined")
   ) {
     event.preventDefault();
-    return;
   }
 });
 

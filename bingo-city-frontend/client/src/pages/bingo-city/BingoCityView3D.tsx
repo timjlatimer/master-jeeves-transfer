@@ -1,810 +1,606 @@
 /**
- * BingoCityView3D.tsx — The 3D City Experience
- *
- * A fully navigable 3D scene using React Three Fiber + Drei.
- * - Orbit controls: zoom, pan, rotate, touch support
- * - 6 Bingo Card buildings arranged in a city grid
- * - Each building: 5 color-coded glass floors + rooftop
- * - Ruby Red Maven building: featured, glowing orange, larger
- * - Click any building → zoom in + show card detail panel
- * - Floor windows glow based on completion status
- * - Animated floating avatars on rooftops
- * - City ground plane with grid lines
+ * BingoCityView3D.tsx — CSS Isometric City (iOS-safe, no WebGL)
+ * ==============================================================
+ * Pure CSS/SVG isometric city. Works on iOS Safari, Android, all browsers.
+ * Replaced Three.js/WebGL which does not work reliably on iOS.
  *
  * Design: Warm Noir + 50% Pixar warmth
- * Engine: React Three Fiber + Drei
+ * - Multiple buildings in isometric CSS space
+ * - Ruby Red Maven building featured (larger, glowing orange)
+ * - Drag/pan to explore the city
+ * - Tap any building → info panel → "Enter Building"
  *
- * tRPC integration: Replace useBingoCards() with trpc.bingoCards.list.useQuery()
+ * tRPC hook: Replace buildCityData() with trpc.bingoCards.list.useQuery()
  */
-
-import { Suspense, useRef, useState, useEffect } from "react";
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import {
-  OrbitControls,
-  Text,
-  Float,
-  Environment,
-  Stars,
-  Sparkles as ThreeSparkles,
-  Html,
-} from "@react-three/drei";
-import * as THREE from "three";
+import React, { useState, useRef } from "react";
 import { Link } from "wouter";
-import { ArrowLeft, ZoomIn, RotateCcw, Building2 } from "lucide-react";
-import { useBingoCards, RUBY_RED_SQUARES } from "./data/mockData";
+import { MOCK_CARDS, RUBY_RED_SQUARES } from "./data/mockData";
 
-// ─── Floor color palette ─────────────────────────────────────────────
-const FLOOR_COLORS = [
-  "#1e40af", // F1 Infrastructure — blue
-  "#15803d", // F2 Data — green
-  "#d97706", // F3 Operations — orange
-  "#dc2626", // F4 Community — red
-  "#ca8a04", // F5 Governance — gold
+const BG = "linear-gradient(160deg, #0a0a14 0%, #0c0c1a 40%, #0d0d20 100%)";
+
+const FLOOR_DEFS = [
+  { top: "#1e40af", front: "#1e3a8a", side: "#172554", label: "Infrastructure" },
+  { top: "#15803d", front: "#14532d", side: "#052e16", label: "Data" },
+  { top: "#d97706", front: "#92400e", side: "#451a03", label: "Operations" },
+  { top: "#dc2626", front: "#7f1d1d", side: "#450a0a", label: "Community" },
+  { top: "#ca8a04", front: "#713f12", side: "#422006", label: "Governance" },
 ];
 
-const FLOOR_NAMES = ["Infrastructure", "Data", "Operations", "Community", "Governance"];
-const FLOOR_EMOJIS = ["🏗️", "📊", "⚙️", "🤝", "👑"];
-
-// ─── City layout positions ─────────────────────────────────────────
-const CITY_POSITIONS: [number, number][] = [
-  [0, 0],      // Ruby Red Maven — center featured
-  [-6, -5],    // Companion Core
-  [6, -5],     // Budget Guardian
-  [-6, 5],     // Benefits Navigator
-  [6, 5],      // Deal Hunter
-  [0, -10],    // Advocate Shield
-];
-
-// ─── Single Building Component ────────────────────────────────────
-interface BuildingProps {
-  position: [number, number, number];
-  cardId: string;
+interface CityBuilding {
+  id: string;
   title: string;
-  completion: number; // 0-100
-  isFeatured: boolean;
-  floorProgress: number[]; // 0-5 per floor
-  onClick: () => void;
-  isSelected: boolean;
+  owner: string;
+  progress: number;
+  floorProgress: number[];
+  featured?: boolean;
+  col: number;
+  row: number;
 }
 
-function Building({
-  position,
-  cardId,
-  title,
-  completion,
-  isFeatured,
-  floorProgress,
+function buildCityData(): CityBuilding[] {
+  const rrFloors = [0, 0, 0, 0, 0];
+  RUBY_RED_SQUARES.forEach((sq) => {
+    const fi = Math.floor((Number(sq.id) - 1) / 5);
+    if (fi >= 0 && fi < 5 && sq.status === "complete") rrFloors[fi]++;
+  });
+  const rrPct = Math.round(
+    (RUBY_RED_SQUARES.filter((s) => s.status === "complete").length / 25) * 100
+  );
+
+  const layout = [
+    { id: "ruby-red-maven",  col: 1, row: 1, featured: true },
+    { id: "budget-guardian", col: 3, row: 0 },
+    { id: "benefits-nav",    col: 0, row: 0 },
+    { id: "deal-hunter",     col: 3, row: 2 },
+    { id: "bill-strategist", col: 0, row: 2 },
+    { id: "advocate",        col: 2, row: 3 },
+  ];
+
+  return layout.map((pos, i) => {
+    if (pos.featured) {
+      return {
+        id: pos.id,
+        title: "Ruby Red Maven",
+        owner: "Companion Team",
+        progress: rrPct,
+        floorProgress: rrFloors,
+        featured: true,
+        col: pos.col,
+        row: pos.row,
+      };
+    }
+    const card = MOCK_CARDS[i % MOCK_CARDS.length];
+    const completed = card?.completedSquares ?? 0;
+    const total = card?.totalSquares ?? 25;
+    const p = total > 0 ? Math.round((completed / total) * 100) : 20 + i * 10;
+    const fp = Math.round((p / 100) * 5);
+    return {
+      id: pos.id,
+      title: card?.title ?? `Initiative ${i + 1}`,
+      owner: card?.ownerName ?? "Team",
+      progress: p,
+      floorProgress: [
+        Math.min(5, fp + 1),
+        Math.min(5, fp),
+        Math.max(0, fp - 1),
+        Math.max(0, fp - 2),
+        Math.max(0, fp - 3),
+      ],
+      col: pos.col,
+      row: pos.row,
+    };
+  });
+}
+
+// ── Single isometric building rendered as SVG ─────────────────────
+function IsoBuilding({
+  b,
+  active,
   onClick,
-  isSelected,
-}: BuildingProps) {
-  const groupRef = useRef<THREE.Group>(null);
-  const [hovered, setHovered] = useState(false);
-  const floorHeight = 0.7;
-  const buildingWidth = isFeatured ? 3.2 : 2.4;
-  const buildingDepth = isFeatured ? 3.2 : 2.4;
-  const totalFloors = 5;
-
-  useFrame((state) => {
-    if (!groupRef.current) return;
-    // Gentle hover bob
-    if (hovered || isSelected) {
-      groupRef.current.position.y = Math.sin(state.clock.elapsedTime * 2) * 0.05;
-    } else {
-      groupRef.current.position.y = THREE.MathUtils.lerp(
-        groupRef.current.position.y,
-        0,
-        0.05
-      );
-    }
-  });
-
-  return (
-    <group
-      ref={groupRef}
-      position={position}
-      onClick={onClick}
-      onPointerEnter={() => setHovered(true)}
-      onPointerLeave={() => setHovered(false)}
-    >
-      {/* ── Ground shadow / glow ── */}
-      <mesh position={[0, -0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[buildingWidth + 2, buildingDepth + 2]} />
-        <meshBasicMaterial
-          color={isFeatured ? "#ff8833" : "#3b82f6"}
-          transparent
-          opacity={hovered || isSelected ? 0.15 : 0.06}
-        />
-      </mesh>
-
-      {/* ── Building floors (bottom = F1, top = F5) ── */}
-      {FLOOR_COLORS.map((color, fi) => {
-        const y = fi * floorHeight + floorHeight / 2;
-        const progress = floorProgress[fi] || 0;
-        const glowIntensity = progress / 5;
-
-        return (
-          <group key={fi} position={[0, y, 0]}>
-            {/* Floor body */}
-            <mesh>
-              <boxGeometry args={[buildingWidth, floorHeight - 0.04, buildingDepth]} />
-              <meshStandardMaterial
-                color={color}
-                transparent
-                opacity={0.75 + glowIntensity * 0.2}
-                roughness={0.1}
-                metalness={0.3}
-                emissive={color}
-                emissiveIntensity={glowIntensity * 0.4 + (hovered ? 0.1 : 0)}
-              />
-            </mesh>
-
-            {/* Glass window panels — front face */}
-            {[0, 1, 2, 3, 4].map((wi) => {
-              const wx = (wi - 2) * (buildingWidth / 5.5);
-              const windowStatus = wi < progress ? "complete" : wi === Math.floor(progress) ? "in_progress" : "not_started";
-              const windowColor = windowStatus === "complete" ? "#22c55e" : windowStatus === "in_progress" ? "#60a5fa" : "#ffffff";
-              const windowOpacity = windowStatus === "complete" ? 0.7 : windowStatus === "in_progress" ? 0.4 : 0.08;
-
-              return (
-                <mesh key={wi} position={[wx, 0, buildingDepth / 2 + 0.01]}>
-                  <planeGeometry args={[buildingWidth / 6.5, floorHeight * 0.65]} />
-                  <meshBasicMaterial
-                    color={windowColor}
-                    transparent
-                    opacity={windowOpacity}
-                  />
-                </mesh>
-              );
-            })}
-
-            {/* Floor edge glow strip */}
-            <mesh position={[0, floorHeight / 2, 0]}>
-              <boxGeometry args={[buildingWidth + 0.05, 0.04, buildingDepth + 0.05]} />
-              <meshBasicMaterial color={color} transparent opacity={0.9} />
-            </mesh>
-          </group>
-        );
-      })}
-
-      {/* ── Rooftop ── */}
-      <group position={[0, totalFloors * floorHeight + 0.15, 0]}>
-        {/* Rooftop deck */}
-        <mesh>
-          <boxGeometry args={[buildingWidth + 0.1, 0.1, buildingDepth + 0.1]} />
-          <meshStandardMaterial color="#1a1a2e" roughness={0.8} metalness={0.2} />
-        </mesh>
-
-        {/* Rooftop railing */}
-        {[
-          [0, buildingDepth / 2],
-          [0, -buildingDepth / 2],
-          [buildingWidth / 2, 0],
-          [-buildingWidth / 2, 0],
-        ].map(([rx, rz], ri) => (
-          <mesh key={ri} position={[rx, 0.2, rz]}>
-            <boxGeometry args={[ri < 2 ? buildingWidth : 0.05, 0.3, ri < 2 ? 0.05 : buildingDepth]} />
-            <meshBasicMaterial color="#f59e0b" transparent opacity={0.6} />
-          </mesh>
-        ))}
-
-        {/* Floating avatar emojis on rooftop */}
-        {isFeatured && (
-          <Float speed={2} rotationIntensity={0.1} floatIntensity={0.3}>
-            <Text
-              position={[-0.8, 0.6, 0]}
-              fontSize={0.4}
-              anchorX="center"
-              anchorY="middle"
-            >
-              🐕
-            </Text>
-            <Text
-              position={[0, 0.8, 0]}
-              fontSize={0.35}
-              anchorX="center"
-              anchorY="middle"
-            >
-              ✨
-            </Text>
-            <Text
-              position={[0.8, 0.6, 0.3]}
-              fontSize={0.4}
-              anchorX="center"
-              anchorY="middle"
-            >
-              🐱
-            </Text>
-          </Float>
-        )}
-
-        {/* Antenna for featured building */}
-        {isFeatured && (
-          <group position={[0, 0.5, 0]}>
-            <mesh>
-              <cylinderGeometry args={[0.02, 0.02, 1, 8]} />
-              <meshBasicMaterial color="#ffffff" transparent opacity={0.4} />
-            </mesh>
-            <mesh position={[0, 0.55, 0]}>
-              <sphereGeometry args={[0.06, 8, 8]} />
-              <meshBasicMaterial color="#ff8833" />
-            </mesh>
-            {/* Pulsing light */}
-            <pointLight color="#ff8833" intensity={2} distance={3} />
-          </group>
-        )}
-
-        {/* Building name label */}
-        <Html
-          position={[0, 0.8, buildingDepth / 2 + 0.3]}
-          center
-          distanceFactor={8}
-          style={{ pointerEvents: "none" }}
-        >
-          <div
-            style={{
-              background: "rgba(10,10,20,0.9)",
-              border: `1px solid ${isFeatured ? "#ff8833" : "rgba(255,255,255,0.15)"}`,
-              borderRadius: 6,
-              padding: "3px 8px",
-              whiteSpace: "nowrap",
-              fontSize: 10,
-              fontFamily: "monospace",
-              color: isFeatured ? "#ff8833" : "rgba(255,255,255,0.7)",
-              letterSpacing: "0.05em",
-              boxShadow: isFeatured ? "0 0 12px rgba(255,136,51,0.3)" : "none",
-            }}
-          >
-            {title}
-          </div>
-        </Html>
-      </group>
-
-      {/* ── Selection/hover outline ── */}
-      {(hovered || isSelected) && (
-        <mesh position={[0, (totalFloors * floorHeight) / 2, 0]}>
-          <boxGeometry args={[buildingWidth + 0.15, totalFloors * floorHeight + 0.15, buildingDepth + 0.15]} />
-          <meshBasicMaterial
-            color={isFeatured ? "#ff8833" : "#60a5fa"}
-            transparent
-            opacity={0.08}
-            side={THREE.BackSide}
-          />
-        </mesh>
-      )}
-
-      {/* Floor labels on hover */}
-      {hovered && (
-        <Html
-          position={[-buildingWidth / 2 - 0.5, (totalFloors * floorHeight) / 2, 0]}
-          center={false}
-          distanceFactor={6}
-          style={{ pointerEvents: "none" }}
-        >
-          <div style={{
-            display: "flex",
-            flexDirection: "column-reverse",
-            gap: 2,
-          }}>
-            {FLOOR_COLORS.map((color, fi) => (
-              <div key={fi} style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 4,
-                fontSize: 9,
-                fontFamily: "monospace",
-                color: "rgba(255,255,255,0.7)",
-                background: "rgba(10,10,20,0.8)",
-                padding: "2px 6px",
-                borderRadius: 3,
-                borderLeft: `2px solid ${color}`,
-                whiteSpace: "nowrap",
-              }}>
-                <span style={{ color }}>{FLOOR_EMOJIS[fi]}</span>
-                {floorProgress[fi]}/5
-              </div>
-            ))}
-          </div>
-        </Html>
-      )}
-    </group>
-  );
-}
-
-// ─── City Ground Plane ────────────────────────────────────────────
-function CityGround() {
-  return (
-    <group>
-      {/* Main ground */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.1, 0]}>
-        <planeGeometry args={[60, 60]} />
-        <meshStandardMaterial
-          color="#06060f"
-          roughness={0.9}
-          metalness={0.1}
-        />
-      </mesh>
-
-      {/* Grid lines */}
-      <gridHelper
-        args={[60, 30, "#1a1a3e", "#0d0d20"]}
-        position={[0, -0.09, 0]}
-      />
-
-      {/* City name on ground */}
-      <Text
-        position={[0, -0.08, 14]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        fontSize={1.2}
-        color="#ff8833"
-        anchorX="center"
-        anchorY="middle"
-        font={undefined}
-        characters="BINGO CITY"
-      >
-        BINGO CITY
-      </Text>
-
-      {/* Subtitle */}
-      <Text
-        position={[0, -0.08, 16]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        fontSize={0.4}
-        color="rgba(255,255,255,0.2)"
-        anchorX="center"
-        anchorY="middle"
-      >
-        A city working for you
-      </Text>
-    </group>
-  );
-}
-
-// ─── Camera controller for zoom-to-building ──────────────────────
-function CameraController({
-  target,
-  onReady,
 }: {
-  target: [number, number, number] | null;
-  onReady: (controls: any) => void;
+  b: CityBuilding;
+  active: boolean;
+  onClick: () => void;
 }) {
-  const controlsRef = useRef<any>(null);
-  const { camera } = useThree();
+  const [hov, setHov] = useState(false);
+  const sc = b.featured ? 1.5 : 1.0;
+  const fh = 22 * sc;
+  const bw = 56 * sc;
+  const bd = 44 * sc;
+  const cos30 = 0.866;
+  const sin30 = 0.5;
+  const fw = bw * cos30;
+  const fwy = bw * sin30;
+  const fd = bd * cos30;
+  const fdy = bd * sin30;
+  const totalH = FLOOR_DEFS.length * fh;
+  const svgW = fw + fd + 24;
+  const svgH = totalH + fwy + fdy + 60;
+  const ox = fd + 12;
+  const oy = svgH - 22;
 
-  useEffect(() => {
-    if (controlsRef.current) {
-      onReady(controlsRef.current);
-    }
-  }, [onReady]);
+  function pts(yBase: number) {
+    return {
+      front: { x: ox,           y: oy - yBase },
+      left:  { x: ox - fw,      y: oy - yBase - fwy },
+      back:  { x: ox - fw + fd, y: oy - yBase - fwy - fdy },
+      right: { x: ox + fd,      y: oy - yBase - fdy },
+    };
+  }
 
-  useFrame(() => {
-    if (!target || !controlsRef.current) return;
-    // Smoothly move camera target toward selected building
-    const targetVec = new THREE.Vector3(...target);
-    controlsRef.current.target.lerp(targetVec, 0.05);
-    controlsRef.current.update();
-  });
-
-  return (
-    <OrbitControls
-      ref={controlsRef}
-      enableDamping
-      dampingFactor={0.05}
-      minDistance={3}
-      maxDistance={40}
-      maxPolarAngle={Math.PI / 2.1}
-      minPolarAngle={0.1}
-    />
-  );
-}
-
-// ─── Main 3D City Scene ───────────────────────────────────────────
-function CityScene({
-  cards,
-  selectedId,
-  onSelect,
-}: {
-  cards: any[];
-  selectedId: string | null;
-  onSelect: (id: string, pos: [number, number, number]) => void;
-}) {
-  return (
-    <>
-      {/* Lighting */}
-      <ambientLight intensity={0.4} />
-      <directionalLight
-        position={[10, 20, 10]}
-        intensity={1.2}
-        castShadow
-        color="#fff8f0"
-      />
-      <pointLight position={[-10, 15, -10]} intensity={0.6} color="#3b82f6" />
-      <pointLight position={[10, 10, 10]} intensity={0.4} color="#ff8833" />
-
-      {/* Stars background */}
-      <Stars radius={80} depth={50} count={3000} factor={4} saturation={0.5} fade />
-
-      {/* Atmospheric sparkles */}
-      <ThreeSparkles
-        count={80}
-        scale={[30, 15, 30]}
-        size={1.5}
-        speed={0.3}
-        color="#ff8833"
-        opacity={0.3}
-      />
-
-      {/* Ground */}
-      <CityGround />
-
-      {/* Buildings */}
-      {cards.map((card, i) => {
-        const [px, pz] = CITY_POSITIONS[i] || [i * 7, 0];
-        const pos: [number, number, number] = [px, 0, pz];
-        // Use real squares for Ruby Red Maven, estimate for others
-        const squares = card.id === "ruby-red-maven" ? RUBY_RED_SQUARES : null;
-        const completion = Math.round((card.completedSquares / card.totalSquares) * 100);
-        const floorProgress = squares
-          ? [
-              squares.filter((s) => s.floor === 1 && s.status === "complete").length,
-              squares.filter((s) => s.floor === 2 && s.status === "complete").length,
-              squares.filter((s) => s.floor === 3 && s.status === "complete").length,
-              squares.filter((s) => s.floor === 4 && s.status === "complete").length,
-              squares.filter((s) => s.floor === 5 && s.status === "complete").length,
-            ]
-          : [
-              Math.round((completion / 100) * 5 * 1.2),
-              Math.round((completion / 100) * 5 * 1.0),
-              Math.round((completion / 100) * 5 * 0.8),
-              Math.round((completion / 100) * 5 * 0.5),
-              Math.round((completion / 100) * 5 * 0.2),
-            ].map((v) => Math.min(5, v));
-
-        return (
-          <Building
-            key={card.id}
-            position={pos}
-            cardId={card.id}
-            title={card.title}
-            completion={Math.round((card.completedSquares / card.totalSquares) * 100)}
-            isFeatured={card.id === "ruby-red-maven"}
-            floorProgress={floorProgress}
-            onClick={() => onSelect(card.id, pos)}
-            isSelected={selectedId === card.id}
-          />
-        );
-      })}
-    </>
-  );
-}
-
-// ─── Selected Building Panel ──────────────────────────────────────
-function SelectedBuildingPanel({
-  card,
-  onClose,
-}: {
-  card: any;
-  onClose: () => void;
-}) {
-  const completion = Math.round((card.completedSquares / card.totalSquares) * 100);
+  const glow = b.featured ? "#ff8833" : "#3b82f6";
+  const lit = active || hov;
 
   return (
     <div
+      onClick={onClick}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
       style={{
-        position: "absolute",
-        bottom: 24,
-        left: "50%",
-        transform: "translateX(-50%)",
-        width: "min(420px, calc(100vw - 32px))",
-        background: "rgba(10,10,20,0.95)",
-        border: `1px solid ${card.id === "ruby-red-maven" ? "#ff8833" : "rgba(255,255,255,0.12)"}`,
-        borderRadius: 16,
-        padding: "16px 20px",
-        backdropFilter: "blur(20px)",
-        boxShadow: `0 24px 60px rgba(0,0,0,0.7), 0 0 40px ${card.id === "ruby-red-maven" ? "rgba(255,136,51,0.15)" : "rgba(59,130,246,0.1)"}`,
-        zIndex: 20,
+        cursor: "pointer",
+        transform: lit ? "translateY(-8px)" : "translateY(0)",
+        transition: "transform 0.25s ease",
+        filter: lit
+          ? `drop-shadow(0 0 ${b.featured ? 20 : 10}px ${glow})`
+          : "none",
       }}
     >
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 12 }}>
-        <div>
-          <div style={{ fontSize: 9, fontFamily: "monospace", color: "rgba(255,255,255,0.4)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 4 }}>
-            Selected Building
-          </div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: card.id === "ruby-red-maven" ? "#ff8833" : "white" }}>
-            {card.title}
-          </div>
-        </div>
-        <button
-          onClick={onClose}
+      <svg
+        width={svgW}
+        height={svgH}
+        viewBox={`0 0 ${svgW} ${svgH}`}
+        style={{ overflow: "visible" }}
+      >
+        {/* Ground glow */}
+        <ellipse
+          cx={ox + fd / 2 - fw / 2}
+          cy={oy + 6}
+          rx={fw * 0.9}
+          ry={8 * sc}
+          fill={glow}
+          opacity={lit ? 0.25 : 0.08}
+        />
+
+        {/* Floors bottom-up */}
+        {FLOOR_DEFS.map((fd_def, fi) => {
+          const yBase = fi * fh;
+          const yTop = yBase + fh;
+          const b0 = pts(yBase);
+          const t0 = pts(yTop);
+          const prog = b.floorProgress[fi] ?? 0;
+          const ratio = prog / 5;
+
+          const frontFace = `${b0.front.x},${b0.front.y} ${b0.left.x},${b0.left.y} ${t0.left.x},${t0.left.y} ${t0.front.x},${t0.front.y}`;
+          const rightFace = `${b0.front.x},${b0.front.y} ${b0.right.x},${b0.right.y} ${t0.right.x},${t0.right.y} ${t0.front.x},${t0.front.y}`;
+          const topFace = `${t0.front.x},${t0.front.y} ${t0.left.x},${t0.left.y} ${t0.back.x},${t0.back.y} ${t0.right.x},${t0.right.y}`;
+
+          const windows = Array.from({ length: 5 }, (_, wi) => {
+            const t = (wi + 0.5) / 5;
+            const wx = b0.front.x + (b0.left.x - b0.front.x) * t;
+            const wy =
+              b0.front.y + (b0.left.y - b0.front.y) * t - fh * 0.5;
+            return { wx, wy, done: wi < prog };
+          });
+
+          return (
+            <g key={fi}>
+              <polygon
+                points={frontFace}
+                fill={fd_def.front}
+                opacity={0.85 + ratio * 0.15}
+                stroke="rgba(255,255,255,0.06)"
+                strokeWidth="0.5"
+              />
+              <polygon
+                points={rightFace}
+                fill={fd_def.side}
+                opacity={0.7 + ratio * 0.2}
+                stroke="rgba(255,255,255,0.04)"
+                strokeWidth="0.5"
+              />
+              <polygon
+                points={topFace}
+                fill={fd_def.top}
+                opacity={0.9}
+                stroke="rgba(255,255,255,0.12)"
+                strokeWidth="0.5"
+              />
+              {windows.map((w, wi) => (
+                <circle
+                  key={wi}
+                  cx={w.wx}
+                  cy={w.wy}
+                  r={2.2 * sc}
+                  fill={w.done ? "#22c55e" : "rgba(255,255,255,0.1)"}
+                  opacity={w.done ? 1 : 0.5}
+                />
+              ))}
+              <line
+                x1={t0.front.x} y1={t0.front.y}
+                x2={t0.left.x}  y2={t0.left.y}
+                stroke={fd_def.top} strokeWidth={1.5} opacity={0.6}
+              />
+              <line
+                x1={t0.front.x} y1={t0.front.y}
+                x2={t0.right.x} y2={t0.right.y}
+                stroke={fd_def.top} strokeWidth={1} opacity={0.4}
+              />
+            </g>
+          );
+        })}
+
+        {/* Roof cap */}
+        {(() => {
+          const top = pts(FLOOR_DEFS.length * fh);
+          const roofPts = `${top.front.x},${top.front.y} ${top.left.x},${top.left.y} ${top.back.x},${top.back.y} ${top.right.x},${top.right.y}`;
+          return (
+            <g>
+              <polygon
+                points={roofPts}
+                fill={b.featured ? "#1a1a3e" : "#1a1a2e"}
+                stroke={
+                  b.featured
+                    ? "rgba(255,136,51,0.5)"
+                    : "rgba(255,255,255,0.15)"
+                }
+                strokeWidth="1"
+              />
+              {b.featured && (
+                <>
+                  <text x={top.front.x - 6}  y={top.front.y - 8}  fontSize={11} textAnchor="middle">🐕</text>
+                  <text x={top.front.x + 7}   y={top.front.y - 5}  fontSize={9}  textAnchor="middle">🦅</text>
+                  <text
+                    x={top.left.x + (top.front.x - top.left.x) * 0.4}
+                    y={top.left.y + (top.front.y - top.left.y) * 0.4 - 8}
+                    fontSize={10} textAnchor="middle"
+                  >✨</text>
+                  <text
+                    x={top.right.x + (top.front.x - top.right.x) * 0.4}
+                    y={top.right.y + (top.front.y - top.right.y) * 0.4 - 6}
+                    fontSize={9} textAnchor="middle"
+                  >🐱</text>
+                </>
+              )}
+              {b.featured && (
+                <g>
+                  <line
+                    x1={top.front.x} y1={top.front.y - 2}
+                    x2={top.front.x} y2={top.front.y - 22}
+                    stroke="rgba(255,255,255,0.3)" strokeWidth="1.5"
+                  />
+                  <circle cx={top.front.x} cy={top.front.y - 24} r={3} fill="#ff8833" opacity={0.9} />
+                </g>
+              )}
+            </g>
+          );
+        })()}
+
+        {/* Progress bar */}
+        <rect
+          x={ox - fw * 0.4} y={oy + 10}
+          width={fw * 0.8} height={3} rx={1.5}
+          fill="rgba(255,255,255,0.08)"
+        />
+        <rect
+          x={ox - fw * 0.4} y={oy + 10}
+          width={fw * 0.8 * (b.progress / 100)} height={3} rx={1.5}
+          fill={b.featured ? "#ff8833" : "#22c55e"}
+        />
+      </svg>
+
+      {/* Label */}
+      <div style={{ textAlign: "center", marginTop: -2 }}>
+        <div
           style={{
-            background: "rgba(255,255,255,0.06)",
-            border: "1px solid rgba(255,255,255,0.1)",
-            borderRadius: 8,
-            color: "rgba(255,255,255,0.5)",
-            fontSize: 12,
-            padding: "4px 8px",
-            cursor: "pointer",
+            fontSize: b.featured ? 11 : 9,
+            fontWeight: b.featured ? 700 : 500,
+            color: b.featured ? "#ff8833" : "rgba(255,255,255,0.65)",
+            fontFamily: "monospace",
+            letterSpacing: "0.04em",
           }}
         >
-          ✕
-        </button>
-      </div>
-
-      {/* Progress */}
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", fontFamily: "monospace" }}>Overall Progress</span>
-          <span style={{ fontSize: 11, color: "#22c55e", fontFamily: "monospace", fontWeight: 700 }}>{completion}%</span>
+          {b.featured && "★ "}
+          {b.title}
         </div>
-        <div style={{ height: 4, background: "rgba(255,255,255,0.08)", borderRadius: 2, overflow: "hidden" }}>
-          <div style={{
-            width: `${completion}%`,
-            height: "100%",
-            background: card.id === "ruby-red-maven" ? "#ff8833" : "#22c55e",
-            borderRadius: 2,
-            transition: "width 0.5s ease",
-          }} />
+        <div style={{ fontSize: 8, color: "rgba(255,255,255,0.3)", fontFamily: "monospace" }}>
+          {b.progress}%
         </div>
       </div>
-
-      {/* Floor progress */}
-      <div style={{ display: "flex", gap: 4, marginBottom: 14 }}>
-        {FLOOR_COLORS.map((color, fi) => (
-          <div key={fi} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-            <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", fontFamily: "monospace" }}>F{fi + 1}</div>
-            <div style={{ width: "100%", height: 3, background: "rgba(255,255,255,0.08)", borderRadius: 2 }}>
-              <div style={{
-                width: `${((card.squares?.filter((s: any) => s.floor === fi + 1 && s.status === "complete").length || 0) / 5) * 100}%`,
-                height: "100%",
-                background: color,
-                borderRadius: 2,
-              }} />
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Stats row */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-        {[
-          { label: "Complete", value: card.completedSquares, color: "#22c55e" },
-          { label: "Active", value: card.inProgressSquares, color: "#60a5fa" },
-          { label: "Blocked", value: card.blockedSquares, color: "#ef4444" },
-        ].map(({ label, value, color }) => (
-          <div key={label} style={{
-            flex: 1,
-            background: "rgba(255,255,255,0.04)",
-            border: "1px solid rgba(255,255,255,0.06)",
-            borderRadius: 8,
-            padding: "6px 8px",
-            textAlign: "center",
-          }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color }}>{value}</div>
-            <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", fontFamily: "monospace", textTransform: "uppercase" }}>{label}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* CTA */}
-      <Link href={`/bingo-city/card/${card.id}`}>
-        <button style={{
-          width: "100%",
-          padding: "10px 16px",
-          background: card.id === "ruby-red-maven" ? "#ff8833" : "rgba(255,255,255,0.08)",
-          border: "none",
-          borderRadius: 10,
-          color: card.id === "ruby-red-maven" ? "black" : "white",
-          fontSize: 13,
-          fontWeight: 700,
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 6,
-        }}>
-          <Building2 size={14} />
-          Enter This Building →
-        </button>
-      </Link>
     </div>
   );
 }
 
-// ─── Main Page Component ──────────────────────────────────────────
+// ── Main City Page ────────────────────────────────────────────────
 export default function BingoCityView3D() {
-  const { data: cards } = useBingoCards();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [cameraTarget, setCameraTarget] = useState<[number, number, number] | null>(null);
-  const [controlsRef, setControlsRef] = useState<any>(null);
-  const [showHint, setShowHint] = useState(true);
+  const [active, setActive] = useState<string>("ruby-red-maven");
+  const [panX, setPanX] = useState(0);
+  const [panY, setPanY] = useState(0);
+  const dragging = useRef(false);
+  const last = useRef({ x: 0, y: 0 });
+  const buildings = buildCityData();
+  const activeB = buildings.find((b) => b.id === active);
 
-  const selectedCard = selectedId ? cards.find((c: any) => c.id === selectedId) : null;
-
-  useEffect(() => {
-    const timer = setTimeout(() => setShowHint(false), 4000);
-    return () => clearTimeout(timer);
-  }, []);
-
-  const handleSelect = (id: string, pos: [number, number, number]) => {
-    setSelectedId(id === selectedId ? null : id);
-    setCameraTarget(id === selectedId ? null : [pos[0], pos[1] + 2, pos[2]]);
+  const onMD = (e: React.MouseEvent) => {
+    dragging.current = true;
+    last.current = { x: e.clientX, y: e.clientY };
   };
-
-  const handleReset = () => {
-    setSelectedId(null);
-    setCameraTarget(null);
-    if (controlsRef) {
-      controlsRef.target.set(0, 0, 0);
-      controlsRef.object.position.set(0, 18, 22);
-    }
+  const onMM = (e: React.MouseEvent) => {
+    if (!dragging.current) return;
+    setPanX((p) => p + e.clientX - last.current.x);
+    setPanY((p) => p + e.clientY - last.current.y);
+    last.current = { x: e.clientX, y: e.clientY };
   };
+  const onMU = () => { dragging.current = false; };
+  const onTS = (e: React.TouchEvent) => {
+    dragging.current = true;
+    last.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  };
+  const onTM = (e: React.TouchEvent) => {
+    if (!dragging.current) return;
+    setPanX((p) => p + e.touches[0].clientX - last.current.x);
+    setPanY((p) => p + e.touches[0].clientY - last.current.y);
+    last.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  };
+  const onTE = () => { dragging.current = false; };
+
+  const UNIT = 160;
+  const cos30 = 0.866;
+  const sin30 = 0.5;
+  function gts(col: number, row: number) {
+    return {
+      x: (col - row) * cos30 * UNIT,
+      y: (col + row) * sin30 * UNIT,
+    };
+  }
 
   return (
-    <div style={{
-      width: "100vw",
-      height: "100vh",
-      background: "#0a0a14",
-      position: "relative",
-      overflow: "hidden",
-    }}>
-      {/* ── 3D Canvas ── */}
-      <Canvas
-        camera={{ position: [0, 18, 22], fov: 55 }}
-        gl={{ antialias: true, alpha: false }}
-        shadows
-        style={{ background: "linear-gradient(180deg, #0a0a14 0%, #0c0c1a 100%)" }}
+    <div
+      style={{
+        minHeight: "100vh",
+        background: BG,
+        color: "white",
+        fontFamily: "system-ui, sans-serif",
+        overflow: "hidden",
+        position: "relative",
+      }}
+    >
+      {/* Header */}
+      <header
+        style={{
+          position: "fixed",
+          top: 0, left: 0, right: 0,
+          zIndex: 100,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "12px 16px",
+          background: "rgba(10,10,20,0.92)",
+          backdropFilter: "blur(12px)",
+          borderBottom: "1px solid rgba(255,255,255,0.06)",
+        }}
       >
-        <Suspense fallback={null}>
-          <CityScene
-            cards={cards}
-            selectedId={selectedId}
-            onSelect={handleSelect}
-          />
-          <CameraController
-            target={cameraTarget}
-            onReady={setControlsRef}
-          />
-        </Suspense>
-      </Canvas>
-
-      {/* ── UI Overlay ── */}
-
-      {/* Top bar */}
-      <div style={{
-        position: "absolute",
-        top: 0,
-        left: 0,
-        right: 0,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "12px 16px",
-        background: "linear-gradient(180deg, rgba(10,10,20,0.9) 0%, transparent 100%)",
-        zIndex: 10,
-      }}>
-        <Link href="/bingo-city">
-          <button style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            background: "rgba(255,255,255,0.06)",
-            border: "1px solid rgba(255,255,255,0.1)",
-            borderRadius: 8,
-            color: "rgba(255,255,255,0.7)",
-            fontSize: 12,
-            padding: "6px 12px",
-            cursor: "pointer",
-            fontFamily: "monospace",
-          }}>
-            <ArrowLeft size={12} />
-            Back
-          </button>
-        </Link>
-
-        <div style={{
-          fontSize: 13,
-          fontWeight: 700,
-          color: "white",
-          letterSpacing: "0.05em",
-          textAlign: "center",
-        }}>
-          <span style={{ color: "#ff8833" }}>BINGO</span> CITY
-          <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", fontFamily: "monospace", fontWeight: 400, marginTop: 1 }}>
-            {cards.length} buildings · {cards.reduce((a: number, c: any) => a + c.totalSquares, 0)} squares
+        <Link href="/bingo-city" style={{ textDecoration: "none" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 20 }}>🏙️</span>
+            <div>
+              <span style={{ fontSize: 15, fontWeight: 700, color: "white" }}>BINGO </span>
+              <span style={{ fontSize: 15, fontWeight: 700, color: "#ff8833" }}>CITY</span>
+              <div style={{ fontSize: 9, fontFamily: "monospace", color: "rgba(255,255,255,0.35)", letterSpacing: "0.1em" }}>
+                ← BACK
+              </div>
             </div>
+          </div>
+        </Link>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 11, fontFamily: "monospace", color: "#ff8833", fontWeight: 600 }}>
+            THE CITY
+          </div>
+          <div style={{ fontSize: 9, fontFamily: "monospace", color: "rgba(255,255,255,0.35)" }}>
+            DRAG · TAP · EXPLORE
+          </div>
         </div>
+      </header>
 
-        <div style={{ display: "flex", gap: 6 }}>
-          <button
-            onClick={handleReset}
-            title="Reset view"
-            style={{
-              background: "rgba(255,255,255,0.06)",
-              border: "1px solid rgba(255,255,255,0.1)",
-              borderRadius: 8,
-              color: "rgba(255,255,255,0.7)",
-              fontSize: 12,
-              padding: "6px 10px",
-              cursor: "pointer",
-            }}
-          >
-            <RotateCcw size={12} />
-          </button>
-          <Link href="/dashboard">
-            <button style={{
-              background: "rgba(255,136,51,0.1)",
-              border: "1px solid rgba(255,136,51,0.3)",
-              borderRadius: 8,
-              color: "#ff8833",
-              fontSize: 10,
-              padding: "6px 10px",
-              cursor: "pointer",
-              fontFamily: "monospace",
-              letterSpacing: "0.1em",
-              textTransform: "uppercase",
-            }}>
-              Mission Control →
-            </button>
-          </Link>
+      {/* City canvas */}
+      <div
+        onMouseDown={onMD}
+        onMouseMove={onMM}
+        onMouseUp={onMU}
+        onMouseLeave={onMU}
+        onTouchStart={onTS}
+        onTouchMove={onTM}
+        onTouchEnd={onTE}
+        style={{
+          position: "fixed",
+          inset: 0,
+          paddingTop: 56,
+          cursor: "grab",
+          overflow: "hidden",
+          touchAction: "none",
+        }}
+      >
+        {/* Ambient glow */}
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "radial-gradient(ellipse 70% 35% at 50% 65%, rgba(255,136,51,0.05) 0%, transparent 70%)",
+            pointerEvents: "none",
+          }}
+        />
+
+        {/* City grid */}
+        <div
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "52%",
+            transform: `translate(calc(-50% + ${panX}px), calc(-50% + ${panY}px))`,
+            transition: dragging.current ? "none" : "transform 0.08s ease",
+          }}
+        >
+          {buildings.map((b) => {
+            const { x, y } = gts(b.col, b.row);
+            return (
+              <div
+                key={b.id}
+                style={{
+                  position: "absolute",
+                  left: x,
+                  top: y,
+                  transform: "translate(-50%, -50%)",
+                  zIndex: b.featured ? 10 : 1,
+                }}
+              >
+                <IsoBuilding
+                  b={b}
+                  active={active === b.id}
+                  onClick={() => setActive(b.id)}
+                />
+              </div>
+            );
+          })}
         </div>
       </div>
 
-      {/* Interaction hint */}
-      {showHint && (
-        <div style={{
-          position: "absolute",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
-          background: "rgba(10,10,20,0.85)",
-          border: "1px solid rgba(255,255,255,0.1)",
-          borderRadius: 12,
-          padding: "12px 20px",
-          textAlign: "center",
-          pointerEvents: "none",
-          zIndex: 10,
-          animation: "fadeOut 1s ease 3s forwards",
-        }}>
-          <div style={{ fontSize: 20, marginBottom: 6 }}>🏙️</div>
-          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", fontWeight: 600 }}>Drag to rotate · Scroll to zoom</div>
-          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", marginTop: 3, fontFamily: "monospace" }}>Click any building to explore it</div>
+      {/* Floor legend */}
+      <div
+        style={{
+          position: "fixed",
+          top: 68, right: 12,
+          zIndex: 50,
+          background: "rgba(10,10,20,0.88)",
+          backdropFilter: "blur(8px)",
+          border: "1px solid rgba(255,255,255,0.06)",
+          borderRadius: 8,
+          padding: "10px 12px",
+        }}
+      >
+        <div style={{ fontSize: 8, fontFamily: "monospace", color: "rgba(255,255,255,0.3)", marginBottom: 6, letterSpacing: "0.1em" }}>
+          FLOORS
         </div>
-      )}
-
-      {/* Legend */}
-      <div style={{
-        position: "absolute",
-        bottom: selectedCard ? 180 : 24,
-        right: 16,
-        background: "rgba(10,10,20,0.85)",
-        border: "1px solid rgba(255,255,255,0.08)",
-        borderRadius: 10,
-        padding: "10px 12px",
-        zIndex: 10,
-        transition: "bottom 0.3s ease",
-      }}>
-        <div style={{ fontSize: 8, fontFamily: "monospace", color: "rgba(255,255,255,0.3)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 6 }}>Floors</div>
-        {FLOOR_COLORS.map((color, fi) => (
-          <div key={fi} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-            <div style={{ width: 10, height: 10, background: color, borderRadius: 2 }} />
-            <span style={{ fontSize: 9, color: "rgba(255,255,255,0.5)", fontFamily: "monospace" }}>F{fi + 1} {FLOOR_NAMES[fi]}</span>
+        {FLOOR_DEFS.map((fd, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 3 }}>
+            <div style={{ width: 10, height: 10, borderRadius: 2, background: fd.top }} />
+            <span style={{ fontSize: 9, color: "rgba(255,255,255,0.5)", fontFamily: "monospace" }}>
+              F{i + 1} {fd.label}
+            </span>
           </div>
         ))}
+        <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", marginTop: 6, paddingTop: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 2 }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#22c55e" }} />
+            <span style={{ fontSize: 8, color: "rgba(255,255,255,0.4)", fontFamily: "monospace" }}>Complete</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: "rgba(255,255,255,0.15)" }} />
+            <span style={{ fontSize: 8, color: "rgba(255,255,255,0.4)", fontFamily: "monospace" }}>Not started</span>
+          </div>
+        </div>
       </div>
 
-      {/* Selected building panel */}
-      {selectedCard && (
-        <SelectedBuildingPanel
-          card={selectedCard}
-          onClose={() => { setSelectedId(null); setCameraTarget(null); }}
-        />
+      {/* Building count */}
+      <div
+        style={{
+          position: "fixed",
+          top: 68, left: 12,
+          zIndex: 50,
+          background: "rgba(10,10,20,0.88)",
+          backdropFilter: "blur(8px)",
+          border: "1px solid rgba(255,136,51,0.2)",
+          borderRadius: 8,
+          padding: "8px 12px",
+        }}
+      >
+        <div style={{ fontSize: 22, fontWeight: 800, color: "#ff8833", fontFamily: "monospace", lineHeight: 1 }}>
+          {buildings.length}
+        </div>
+        <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", fontFamily: "monospace" }}>
+          BUILDINGS
+        </div>
+      </div>
+
+      {/* Active building panel */}
+      {activeB && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 0, left: 0, right: 0,
+            zIndex: 100,
+            background: "rgba(10,10,20,0.96)",
+            backdropFilter: "blur(16px)",
+            borderTop: "1px solid rgba(255,136,51,0.2)",
+            padding: "14px 16px 20px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+            <div>
+              <div style={{ fontSize: activeB.featured ? 16 : 14, fontWeight: 700, color: activeB.featured ? "#ff8833" : "white" }}>
+                {activeB.featured && "★ "}{activeB.title}
+              </div>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontFamily: "monospace" }}>
+                {activeB.owner} · {activeB.progress}% complete
+              </div>
+            </div>
+            <Link href={`/bingo-city/card/${activeB.id}`}>
+              <button
+                style={{
+                  padding: "10px 18px",
+                  background: activeB.featured ? "#ff8833" : "rgba(255,255,255,0.1)",
+                  border: "none",
+                  borderRadius: 8,
+                  color: activeB.featured ? "#0a0a14" : "white",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Enter Building →
+              </button>
+            </Link>
+          </div>
+          <div style={{ display: "flex", gap: 4 }}>
+            {FLOOR_DEFS.map((fd, i) => (
+              <div key={i} style={{ flex: 1 }}>
+                <div style={{ height: 6, borderRadius: 3, background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
+                  <div
+                    style={{
+                      height: "100%",
+                      width: `${((activeB.floorProgress[i] ?? 0) / 5) * 100}%`,
+                      background: fd.top,
+                      borderRadius: 3,
+                    }}
+                  />
+                </div>
+                <div style={{ fontSize: 8, color: "rgba(255,255,255,0.3)", fontFamily: "monospace", marginTop: 2, textAlign: "center" }}>
+                  F{i + 1}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
-      <style>{`
-        @keyframes fadeOut {
-          to { opacity: 0; }
-        }
-      `}</style>
+      {/* Hint */}
+      <div
+        style={{
+          position: "fixed",
+          bottom: activeB ? 120 : 16,
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 50,
+          fontSize: 9,
+          fontFamily: "monospace",
+          color: "rgba(255,255,255,0.2)",
+          textAlign: "center",
+          pointerEvents: "none",
+          whiteSpace: "nowrap",
+          transition: "bottom 0.3s ease",
+        }}
+      >
+        DRAG TO EXPLORE · TAP A BUILDING · TAP "ENTER BUILDING" TO GO INSIDE
+      </div>
     </div>
   );
 }
